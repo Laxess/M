@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════
---  LUMACC AUTO-FARM v6.1 (Smart Lobby & Pixel Click)
+--  LUMACC AUTO-FARM v6.2 (Sniper Click)
 -- ═══════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -355,11 +355,11 @@ function AUTO_FARM()
         mineAvoider     = true,
         knifeHover      = true,
         
-        -- Координаты для кликов (в процентах)
+        -- ⬅️ КООРДИНАТЫ (В ПРОЦЕНТАХ)
+        clickPlayX      = 0.86,
+        clickPlayY      = 0.80,
         click1v1X       = 0.22, 
         click1v1Y       = 0.18,
-        clickPlayX      = 0.50,
-        clickPlayY      = 0.78,
         
         orbitEnabled    = true,
         orbitSpeed      = 900,
@@ -1185,17 +1185,14 @@ function AUTO_FARM()
                 local clicked = false
 
                 if isDead then
-                    -- Мы мертвы. Ищем ТОЛЬКО "Играть снова" / "Play again" / "Retry"
-                    clicked = clickUIByText({"игратьснова", "playagain", "retry"})
-                    
-                    if not clicked then
-                        -- Если не нашли текст, делаем слепой клик по "Играть снова" (обычно центр-низ)
-                        local vp = Camera.ViewportSize
-                        pcall(function()
-                            VirtualInputManager:SendMouseButtonEvent(vp.X * CFG.clickPlayX, vp.Y * CFG.clickPlayY, 0, true, game, 0); task.wait(0.05)
-                            VirtualInputManager:SendMouseButtonEvent(vp.X * CFG.clickPlayX, vp.Y * CFG.clickPlayY, 0, false, game, 0)
-                        end)
-                    end
+                    -- Мы мертвы. Ждем прогрузки UI и делаем жесткий клик по пикселям в правую часть
+                    task.wait(0.5)
+                    local vp = Camera.ViewportSize
+                    pcall(function()
+                        VirtualInputManager:SendMouseButtonEvent(vp.X * CFG.clickPlayX, vp.Y * CFG.clickPlayY, 0, true, game, 0); task.wait(0.05)
+                        VirtualInputManager:SendMouseButtonEvent(vp.X * CFG.clickPlayX, vp.Y * CFG.clickPlayY, 0, false, game, 0)
+                    end)
+                    clicked = true
                 else
                     -- Мы в лобби. Ищем "Играть" / "Play"
                     clicked = clickUIByText({"играть", "play"})
@@ -1204,7 +1201,7 @@ function AUTO_FARM()
                         task.wait(1.5) -- Ждем загрузки меню 1v1
                     end
                     
-                    -- ЖЕСТКИЙ КЛИК ПО 1V1 (всегда, если мы живы)
+                    -- ЖЕСТКИЙ КЛИК ПО 1V1
                     local vp = Camera.ViewportSize
                     local targetX = vp.X * CFG.click1v1X
                     local targetY = vp.Y * CFG.click1v1Y
@@ -1236,7 +1233,7 @@ function AUTO_FARM()
     end)
 
     -- ═══════════════════════════════════════════════════════
-    -- 🎨 GUI (v6.1)
+    -- 🎨 GUI (v6.2)
     -- ═══════════════════════════════════════════════════════
     local gui=Instance.new("ScreenGui")
     gui.Name="LUMACC_AutoFarm"; gui.ResetOnSpawn=false
@@ -1276,7 +1273,7 @@ function AUTO_FARM()
     local title2=Instance.new("TextLabel")
     title2.Size=UDim2.new(1,-100,0,42); title2.Position=UDim2.new(0,14,0,0)
     title2.BackgroundTransparency=1
-    title2.Text="LUMACC v6.1 (Smart Lobby)"
+    title2.Text="LUMACC v6.2 (Sniper Click)"
     title2.TextColor3=Color3.new(1,1,1)
     title2.Font=Enum.Font.GothamBold; title2.TextSize=15
     title2.TextXAlignment=Enum.TextXAlignment.Left; title2.Parent=hdr
@@ -1471,11 +1468,11 @@ function AUTO_FARM()
     mkToggle(pMisc, "Auto Weapon Pick", "autoPick")
     mkToggle(pMisc, "Auto Play Again", "autoPlayAgain")
 
-    mkSection(pMisc, "LOBBY CLICK POSITIONS")
-    mkSlider(pMisc, "1v1 X (%)", 0.0, 1.0, function() return CFG.click1v1X end, function(v) CFG.click1v1X = v end)
-    mkSlider(pMisc, "1v1 Y (%)", 0.0, 1.0, function() return CFG.click1v1Y end, function(v) CFG.click1v1Y = v end)
+    mkSection(pMisc, "SNIPER CLICK POSITIONS")
     mkSlider(pMisc, "Play Again X", 0.0, 1.0, function() return CFG.clickPlayX end, function(v) CFG.clickPlayX = v end)
     mkSlider(pMisc, "Play Again Y", 0.0, 1.0, function() return CFG.clickPlayY end, function(v) CFG.clickPlayY = v end)
+    mkSlider(pMisc, "1v1 X (%)", 0.0, 1.0, function() return CFG.click1v1X end, function(v) CFG.click1v1X = v end)
+    mkSlider(pMisc, "1v1 Y (%)", 0.0, 1.0, function() return CFG.click1v1Y end, function(v) CFG.click1v1Y = v end)
 
     mkSection(pMisc, "AIM TARGET")
     local aimBtn=Instance.new("TextButton")
@@ -1560,7 +1557,7 @@ function AUTO_FARM()
         end
     end)
 
-    print("[LUMACC] AUTO-FARM v6.1 (Smart Lobby & Pixel Click) активен.")
+    print("[LUMACC] AUTO-FARM v6.2 (Sniper Click) активен.")
 end
 
 AUTO_FARM()
