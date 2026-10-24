@@ -1,7 +1,7 @@
 -- ═══════════════════════════════════════════════════════════
---  LUMACC AUTO-FARM v5.1 (AutoPlayAgain FIX)
---  + Исправлен поиск кнопки "Повторная"
---  + Клик ровно в центр кнопки
+--  LUMACC AUTO-FARM v5.3 (AutoPlayAgain STRICT FIX)
+--  + Теперь кликает ТОЛЬКО по кнопке "Играть снова"
+--  + Reload Bypass (10 студов сверху)
 -- ═══════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -353,6 +353,7 @@ function AUTO_FARM()
         forceUnder      = false,
         shieldDepth     = 2,
         flySpeed        = 240,
+        reloadFlyUp     = true,
         
         orbitEnabled    = true,
         orbitSpeed      = 900,
@@ -402,8 +403,40 @@ function AUTO_FARM()
     local lastShieldRefresh = 0
     local cardboardConn = nil
     local originalProps = {}
+    local currentlyReloading = false
 
-    -- ⬅️ ФУНКЦИЯ КАРТОННОГО РЕЖИМА
+    -- ⬅️ ФУНКЦИЯ ПРОВЕРКИ ПЕРЕЗАРЯДКИ
+    task.spawn(function()
+        while not unloaded do
+            local state = false
+            local char = LP.Character
+            local tool = char and char:FindFirstChildOfClass("Tool")
+            
+            if tool then
+                if tool:GetAttribute("Reloading") or tool:GetAttribute("IsReloading") then 
+                    state = true 
+                end
+                
+                if not state then
+                    local pg = LP:FindFirstChild("PlayerGui")
+                    if pg then
+                        for _, gui in ipairs(pg:GetDescendants()) do
+                            if gui:IsA("TextLabel") and gui.Visible then
+                                local txt = gui.Text:lower()
+                                if txt:find("reload") or txt:find("перезаряд") then
+                                    state = true
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            currentlyReloading = state
+            task.wait(0.15)
+        end
+    end)
+
     local function setCardboardMode(state)
         CFG.cardboardMode = state
         if state then
@@ -658,6 +691,23 @@ function AUTO_FARM()
             else
                 if bodyPos then bodyPos:Destroy(); bodyPos=nil end
                 setLocalTransparency(false)
+            end
+
+            -- ЛОГИКА ПЕРЕЗАРЯДКИ (10 студов сверху)
+            if CFG.reloadFlyUp and currentlyReloading then
+                flyStateReason = "reloading (Up 10)"
+                local targetPos = orbitCenter + Vector3.new(0, 10, 0)
+                local diff = targetPos - myHRP.Position
+                
+                if diff.Magnitude > 0.05 then
+                    bodyVel.Velocity = diff.Unit * math.min(CFG.flySpeed, diff.Magnitude * 12)
+                else
+                    bodyVel.Velocity = Vector3.zero
+                end
+                
+                local look = aimPart.Position - myHRP.Position
+                if look.Magnitude > 0.05 then myHRP.CFrame = CFrame.new(myHRP.Position, myHRP.Position + look.Unit) end
+                return
             end
 
             if not currentTargetModel then
@@ -994,7 +1044,7 @@ function AUTO_FARM()
         end
     end)
 
-    -- AUTO-PLAY-AGAIN (⬅️ ИСПРАВЛЕНО)
+    -- AUTO-PLAY-AGAIN (СТРОГИЙ ФИКС)
     local function normalize(s)
         if not s then return "" end
         local res = s:lower():gsub("^%s+",""):gsub("%s+$",""):gsub("%s+"," ")
@@ -1009,18 +1059,18 @@ function AUTO_FARM()
                 local texts={}
                 if i:IsA("TextButton") then table.insert(texts, normalize(i.Text)) end
                 for _,d2 in ipairs(i:GetDescendants()) do if d2:IsA("TextLabel") then table.insert(texts, normalize(d2.Text)) end end
-                local pa, un = false, false
+                local isPlayAgain = false
+                local isUnavailable = false
                 for _,t in ipairs(texts) do
-                    -- Теперь ищем "повторная" и "играть снова"
-                    if t == "играть снова" or t == "play again" or t == "playagain" or t:find("повторная") then 
-                        pa = true 
+                    -- ⬅️ Ищем ТОЛЬКО "играть снова" или "play again"
+                    if t == "играть снова" or t == "play again" or t == "playagain" then 
+                        isPlayAgain = true 
                     end
                     if t:find("недоступно") or t:find("unavailable") then 
-                        un = true 
+                        isUnavailable = true 
                     end
                 end
-                -- Убрано условие not rp (repeat), чтобы кнопка находилась
-                if pa and not un then res=i; return end
+                if isPlayAgain and not isUnavailable then res=i; return end
             end
             for _,c in ipairs(i:GetChildren()) do scan(c,d+1) end
         end
@@ -1034,7 +1084,6 @@ function AUTO_FARM()
                     if VirtualInputManager then
                         local ap,asz=b.AbsolutePosition,b.AbsoluteSize
                         pcall(function()
-                            -- Клик ровно в центр кнопки
                             VirtualInputManager:SendMouseButtonEvent(ap.X+asz.X/2, ap.Y+asz.Y/2, 0, true, game, 0); task.wait(0.05)
                             VirtualInputManager:SendMouseButtonEvent(ap.X+asz.X/2, ap.Y+asz.Y/2, 0, false, game, 0)
                         end)
@@ -1063,7 +1112,7 @@ function AUTO_FARM()
     end)
 
     -- ═══════════════════════════════════════════════════════
-    -- 🎨 GUI (v5.1)
+    -- 🎨 GUI (v5.3)
     -- ═══════════════════════════════════════════════════════
     local gui=Instance.new("ScreenGui")
     gui.Name="LUMACC_AutoFarm"; gui.ResetOnSpawn=false
@@ -1103,7 +1152,7 @@ function AUTO_FARM()
     local title2=Instance.new("TextLabel")
     title2.Size=UDim2.new(1,-100,0,42); title2.Position=UDim2.new(0,14,0,0)
     title2.BackgroundTransparency=1
-    title2.Text="LUMACC v5.1 (AutoPlayAgain Fix)"
+    title2.Text="LUMACC v5.3 (Play Again Fix)"
     title2.TextColor3=Color3.new(1,1,1)
     title2.Font=Enum.Font.GothamBold; title2.TextSize=15
     title2.TextXAlignment=Enum.TextXAlignment.Left; title2.Parent=hdr
@@ -1262,6 +1311,7 @@ function AUTO_FARM()
     mkSection(pMain, "SHADOW")
     mkToggle(pMain, "Fly", "flyEnabled")
     mkToggle(pMain, "Noclip", "noclipEnabled")
+    mkToggle(pMain, "Fly Up on Reload (10s)", "reloadFlyUp")
 
     mkSection(pCombat, "AIM & FIRE")
     mkToggle(pCombat, "Aimbot (head)", "aimbotEnabled")
@@ -1322,6 +1372,8 @@ function AUTO_FARM()
                 statusPrefix = "FLY: OFF (Empty Server)"
             elseif flyStateReason == "no enemies" then
                 statusPrefix = "FLY: OFF (No Enemies)"
+            elseif flyStateReason:find("reloading") then
+                statusPrefix = "FLY: RELOADING (UP 10)"
             end
             
             stat.Text=string.format("%s | TARGET: %s",
@@ -1364,7 +1416,7 @@ function AUTO_FARM()
         end
     end)
 
-    print("[LUMACC] AUTO-FARM v5.1 активен.")
+    print("[LUMACC] AUTO-FARM v5.3 (Play Again Fix) активен.")
 end
 
 AUTO_FARM()
