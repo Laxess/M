@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════
---  LUMACC AUTO-FARM v5.6 (Knife Hover & Blind Click)
+--  LUMACC AUTO-FARM v5.7 (Pixel Click & Dead Camera Fix)
 -- ═══════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -353,7 +353,10 @@ function AUTO_FARM()
         flySpeed        = 240,
         reloadFlyUp     = true,
         mineAvoider     = true,
-        knifeHover      = true, -- НОВАЯ ОПЦИЯ
+        knifeHover      = true,
+        
+        clickX          = 0.88, -- НОВОЕ: Позиция X (в процентах 0.0 - 1.0)
+        clickY          = 0.82, -- НОВОЕ: Позиция Y (в процентах 0.0 - 1.0)
         
         orbitEnabled    = true,
         orbitSpeed      = 900,
@@ -405,7 +408,7 @@ function AUTO_FARM()
     local originalProps = {}
     local currentlyReloading = false
     local currentlyDodgingMine = false
-    local enemyHasKnife = false -- НОВАЯ ПЕРЕМЕННАЯ
+    local enemyHasKnife = false
 
     -- ⬅️ ФУНКЦИЯ ПОИСКА МИН
     task.spawn(function()
@@ -447,7 +450,6 @@ function AUTO_FARM()
                 if tool and (tool.Name:lower():find("knife") or tool.Name:lower():find("melee")) then
                     hasKnife = true
                 else
-                    -- Иногда нож не в Tool, а в ViewModel или папке
                     for _, v in ipairs(currentTargetModel:GetDescendants()) do
                         if v.Name:lower():find("knife") and (v:IsA("Tool") or v:IsA("Model")) then
                             hasKnife = true
@@ -701,7 +703,7 @@ function AUTO_FARM()
                 lastShieldRefresh = os.clock()
             end
 
-            -- ⬅️ ЛОГИКА ПРИ НОЖЕ (Зависаем на 5 студов сверху)
+            -- ЛОГИКА ПРИ НОЖЕ (Зависаем на 5 студов сверху)
             if CFG.knifeHover and enemyHasKnife then
                 flyStateReason = "knife (Up 5)"
                 if bodyVel then bodyVel.Velocity=Vector3.zero end
@@ -719,7 +721,7 @@ function AUTO_FARM()
                 return
             end
 
-            -- ⬅️ ЛОГИКА УХОДА ОТ МИНЫ (50 студов вверх)
+            -- ЛОГИКА УХОДА ОТ МИНЫ (50 студов вверх)
             if CFG.mineAvoider and currentlyDodgingMine then
                 flyStateReason = "dodging mine (Up 50)"
                 if bodyVel then bodyVel.Velocity=Vector3.zero end
@@ -855,8 +857,13 @@ function AUTO_FARM()
         end
     end)
 
-    -- AIMBOT
+    -- ⬅️ AIMBOT (ОТКЛЮЧЕН, ЕСЛИ МЕРТВ)
     RunService:BindToRenderStep("LUMACC_Aim",Enum.RenderPriority.Camera.Value+1,function()
+        local myChar = LP.Character
+        local hum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+        -- Если игрок мертв, камера не крутится (фикс дерганий)
+        if not hum or hum.Health <= 0 then return end
+
         if not CFG.aimbotEnabled or not roundReady or not currentTargetModel or not currentTargetModel.Parent or #Players:GetPlayers() > 4 then return end
         local aim = getAimPart(currentTargetModel)
         if not aim then return end
@@ -866,41 +873,46 @@ function AUTO_FARM()
         end
     end)
 
-    -- TRIGGERBOT
+    -- ⬅️ TRIGGERBOT (ОТКЛЮЧЕН, ЕСЛИ МЕРТВ)
     task.spawn(function()
         while not unloaded do
-            if CFG.triggerbotEnabled and roundReady and currentTargetModel and currentTargetModel.Parent and #Players:GetPlayers() <= 4 and not currentlyDodgingMine then
-                local shielded = false
-                if CFG.shieldCheck then
-                    shielded, currentShieldType = hasShield(currentTargetModel)
-                end
-                
-                if not shielded then
-                    local myHRP = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-                    local aimPart = getAimPart(currentTargetModel)
+            local myChar = LP.Character
+            local hum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+            
+            if hum and hum.Health > 0 then
+                if CFG.triggerbotEnabled and roundReady and currentTargetModel and currentTargetModel.Parent and #Players:GetPlayers() <= 4 and not currentlyDodgingMine then
+                    local shielded = false
+                    if CFG.shieldCheck then
+                        shielded, currentShieldType = hasShield(currentTargetModel)
+                    end
                     
-                    if myHRP and aimPart then
-                        local dist = (myHRP.Position - aimPart.Position).Magnitude
-                        if dist <= CFG.fireRange then
-                            local camPos = Camera.CFrame.Position
-                            Camera.CFrame = CFrame.new(camPos, aimPart.Position)
-                            
-                            local lookDir = Camera.CFrame.LookVector
-                            local dirToTarget = (aimPart.Position - camPos).Unit
-                            
-                            local isLooking = true
-                            if not CFG.aimbotEnabled then
-                                isLooking = lookDir:Dot(dirToTarget) > 0.95
-                            end
-                            
-                            if isLooking then
-                                local trigRay = RaycastParams.new()
-                                trigRay.FilterType = Enum.RaycastFilterType.Exclude
-                                trigRay.FilterDescendantsInstances = {LP.Character, Camera}
-                                local rayRes = Workspace:Raycast(camPos, dirToTarget * dist, trigRay)
+                    if not shielded then
+                        local myHRP = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                        local aimPart = getAimPart(currentTargetModel)
+                        
+                        if myHRP and aimPart then
+                            local dist = (myHRP.Position - aimPart.Position).Magnitude
+                            if dist <= CFG.fireRange then
+                                local camPos = Camera.CFrame.Position
+                                Camera.CFrame = CFrame.new(camPos, aimPart.Position)
                                 
-                                if not rayRes or rayRes.Instance:IsDescendantOf(currentTargetModel) then
-                                    pcall(fireOnce)
+                                local lookDir = Camera.CFrame.LookVector
+                                local dirToTarget = (aimPart.Position - camPos).Unit
+                                
+                                local isLooking = true
+                                if not CFG.aimbotEnabled then
+                                    isLooking = lookDir:Dot(dirToTarget) > 0.95
+                                end
+                                
+                                if isLooking then
+                                    local trigRay = RaycastParams.new()
+                                    trigRay.FilterType = Enum.RaycastFilterType.Exclude
+                                    trigRay.FilterDescendantsInstances = {LP.Character, Camera}
+                                    local rayRes = Workspace:Raycast(camPos, dirToTarget * dist, trigRay)
+                                    
+                                    if not rayRes or rayRes.Instance:IsDescendantOf(currentTargetModel) then
+                                        pcall(fireOnce)
+                                    end
                                 end
                             end
                         end
@@ -1107,49 +1119,25 @@ function AUTO_FARM()
         end
     end)
 
-    -- ⬅️ AUTO-PLAY-AGAIN (СЛЕПОЙ КЛИК НИЖЕ)
-    local function findAnyButton()
-        local res
-        local function scan(i,d)
-            if res then return end
-            if not i:IsA("GuiObject") or not i.Visible then 
-                for _,c in ipairs(i:GetChildren()) do scan(c,d+1) end 
-                return 
-            end
-            -- Просто ищем первую попавшуюся кнопку в меню
-            if i:IsA("TextButton") and i.Text ~= "" then
-                -- Игнорируем мелкие кнопки (типа крестиков)
-                if i.AbsoluteSize.Y > 20 then
-                    res = i
-                    return
-                end
-            end
-            for _,c in ipairs(i:GetChildren()) do scan(c,d+1) end
-        end
-        scan(PlayerGui,0)
-        return res
-    end
-    
+    -- ⬅️ AUTO-PLAY-AGAIN (ЧИСТЫЙ КЛИК ПО ПИКСЕЛЯМ)
     task.spawn(function()
         while not unloaded do
             if CFG.autoPlayAgain and (os.clock()-lastPlayAgainClick)>PLAY_AGAIN_COOLDOWN then
-                local b = findAnyButton()
-                if b then
-                    if VirtualInputManager then
-                        local ap,asz=b.AbsolutePosition,b.AbsoluteSize
-                        
-                        local clickX = ap.X + asz.X/2
-                        -- ⬅️ БЕЗУСЛОВНЫЙ КЛИК НИЖЕ
-                        local clickY = ap.Y + asz.Y + 50 
-                        
-                        pcall(function()
-                            VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, true, game, 0); task.wait(0.05)
-                            VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, false, game, 0)
-                        end)
-                    end
-                    lastPlayAgainClick=os.clock()
-                    roundReady = false
+                
+                -- Клик по координатам экрана (настраивается в CFG)
+                local vp = Camera.ViewportSize
+                local clickX = vp.X * CFG.clickX
+                local clickY = vp.Y * CFG.clickY
+                
+                if VirtualInputManager then
+                    pcall(function()
+                        VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, true, game, 0); task.wait(0.05)
+                        VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, false, game, 0)
+                    end)
                 end
+                
+                lastPlayAgainClick = os.clock()
+                roundReady = false
             end
             task.wait(0.5)
         end
@@ -1169,7 +1157,7 @@ function AUTO_FARM()
     end)
 
     -- ═══════════════════════════════════════════════════════
-    -- 🎨 GUI (v5.6)
+    -- 🎨 GUI (v5.7)
     -- ═══════════════════════════════════════════════════════
     local gui=Instance.new("ScreenGui")
     gui.Name="LUMACC_AutoFarm"; gui.ResetOnSpawn=false
@@ -1209,7 +1197,7 @@ function AUTO_FARM()
     local title2=Instance.new("TextLabel")
     title2.Size=UDim2.new(1,-100,0,42); title2.Position=UDim2.new(0,14,0,0)
     title2.BackgroundTransparency=1
-    title2.Text="LUMACC v5.6 (Knife Hover)"
+    title2.Text="LUMACC v5.7 (Pixel Click)"
     title2.TextColor3=Color3.new(1,1,1)
     title2.Font=Enum.Font.GothamBold; title2.TextSize=15
     title2.TextXAlignment=Enum.TextXAlignment.Left; title2.Parent=hdr
@@ -1334,23 +1322,32 @@ function AUTO_FARM()
         end)
     end
 
-    local function mkCycler(parent, text, get, set, values)
+    local function mkSlider(parent, text, min, max, get, set)
         local c=Instance.new("Frame")
-        c.Size=UDim2.new(1,-8,0,32); c.BackgroundColor3=Color3.fromRGB(28,28,38)
+        c.Size=UDim2.new(1,-8,0,46); c.BackgroundColor3=Color3.fromRGB(28,28,38)
         c.BorderSizePixel=0; c.Parent=parent
         Instance.new("UICorner",c).CornerRadius=UDim.new(0,8)
         local l=Instance.new("TextLabel")
-        l.Size=UDim2.new(1,-16,1,0); l.Position=UDim2.new(0,12,0,0)
-        l.BackgroundTransparency=1; l.Text=text..": "..tostring(get())
+        l.Size=UDim2.new(1,-16,0,18); l.Position=UDim2.new(0,12,0,4)
+        l.BackgroundTransparency=1; l.Text=text..": "..string.format("%.2f", get())
         l.TextColor3=Color3.fromRGB(180,200,255); l.Font=Enum.Font.GothamBold
         l.TextSize=12; l.TextXAlignment=Enum.TextXAlignment.Left; l.Parent=c
+        local track=Instance.new("Frame")
+        track.Size=UDim2.new(1,-24,0,6); track.Position=UDim2.new(0,12,0,28)
+        track.BackgroundColor3=Color3.fromRGB(40,40,52); track.BorderSizePixel=0; track.Parent=c
+        Instance.new("UICorner",track).CornerRadius=UDim.new(1,0)
+        local fill=Instance.new("Frame")
+        fill.Size=UDim2.new((get()-min)/(max-min),0,1,0)
+        fill.BackgroundColor3=Color3.fromRGB(100,130,255); fill.BorderSizePixel=0; fill.Parent=track
+        Instance.new("UICorner",fill).CornerRadius=UDim.new(1,0)
         local btn=Instance.new("TextButton")
         btn.Size=UDim2.new(1,0,1,0); btn.BackgroundTransparency=1; btn.Text=""; btn.Parent=c
         btn.MouseButton1Click:Connect(function()
-            local cur=get(); local idx=1
-            for i,v in ipairs(values) do if v==cur then idx=i; break end end
-            idx=idx%#values+1; set(values[idx])
-            l.Text=text..": "..tostring(values[idx])
+            local cur = get() + 0.05
+            if cur > max then cur = min end
+            set(cur)
+            l.Text = text..": "..string.format("%.2f", cur)
+            fill.Size = UDim2.new((cur-min)/(max-min),0,1,0)
         end)
     end
 
@@ -1363,14 +1360,13 @@ function AUTO_FARM()
 
     mkSection(pMain, "3D ORBIT (Dynamic)")
     mkToggle(pMain, "Orbit enabled", "orbitEnabled")
-    mkCycler(pMain, "Speed (°/s)", function() return CFG.orbitSpeed end, function(v) CFG.orbitSpeed=v end, {90,180,360,540,900,1200})
     
     mkSection(pMain, "SHADOW")
     mkToggle(pMain, "Fly", "flyEnabled")
     mkToggle(pMain, "Noclip", "noclipEnabled")
     mkToggle(pMain, "Fly Up on Reload (10s)", "reloadFlyUp")
     mkToggle(pMain, "Mine Avoider (Fly Up 50s)", "mineAvoider")
-    mkToggle(pMain, "Knife Hover (Up 5s)", "knifeHover") -- НОВАЯ КНОПКА
+    mkToggle(pMain, "Knife Hover (Up 5s)", "knifeHover")
 
     mkSection(pCombat, "AIM & FIRE")
     mkToggle(pCombat, "Aimbot (head)", "aimbotEnabled")
@@ -1395,6 +1391,10 @@ function AUTO_FARM()
     mkToggle(pMisc, "Anti-AFK", "antiAfk")
     mkToggle(pMisc, "Auto Weapon Pick", "autoPick")
     mkToggle(pMisc, "Auto Play Again", "autoPlayAgain")
+
+    mkSection(pMisc, "CLICK POSITION (Pixels)")
+    mkSlider(pMisc, "Click X (%)", 0.5, 1.0, function() return CFG.clickX end, function(v) CFG.clickX = v end)
+    mkSlider(pMisc, "Click Y (%)", 0.5, 1.0, function() return CFG.clickY end, function(v) CFG.clickY = v end)
 
     mkSection(pMisc, "AIM TARGET")
     local aimBtn=Instance.new("TextButton")
@@ -1436,7 +1436,7 @@ function AUTO_FARM()
             elseif flyStateReason:find("dodging") then
                 statusPrefix = "FLY: DODGING MINE (UP 50)"
             elseif flyStateReason:find("knife") then
-                statusPrefix = "FLY: KNIFE HOVER (UP 5)" -- НОВЫЙ СТАТУС
+                statusPrefix = "FLY: KNIFE HOVER (UP 5)"
             end
             
             stat.Text=string.format("%s | TARGET: %s",
@@ -1479,7 +1479,7 @@ function AUTO_FARM()
         end
     end)
 
-    print("[LUMACC] AUTO-FARM v5.6 (Knife Hover & Blind Click) активен.")
+    print("[LUMACC] AUTO-FARM v5.7 (Pixel Click & Dead Camera Fix) активен.")
 end
 
 AUTO_FARM()
