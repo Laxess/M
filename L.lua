@@ -1,7 +1,5 @@
 -- ═══════════════════════════════════════════════════════════
---  LUMACC AUTO-FARM v5.3 (AutoPlayAgain STRICT FIX)
---  + Теперь кликает ТОЛЬКО по кнопке "Играть снова"
---  + Reload Bypass (10 студов сверху)
+--  LUMACC AUTO-FARM v5.4 (Click Offset & Reload Fix)
 -- ═══════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -405,7 +403,7 @@ function AUTO_FARM()
     local originalProps = {}
     local currentlyReloading = false
 
-    -- ⬅️ ФУНКЦИЯ ПРОВЕРКИ ПЕРЕЗАРЯДКИ
+    -- ⬅️ ПРОВЕРКА ПЕРЕЗАРЯДКИ (Ammo + UI)
     task.spawn(function()
         while not unloaded do
             local state = false
@@ -413,10 +411,16 @@ function AUTO_FARM()
             local tool = char and char:FindFirstChildOfClass("Tool")
             
             if tool then
+                -- Проверяем атрибуты патронов
+                local ammo = tool:GetAttribute("Ammo") or tool:GetAttribute("Clip") or tool:GetAttribute("CurrentAmmo")
+                if ammo == 0 then state = true end
+                
+                -- Проверяем атрибуты перезарядки
                 if tool:GetAttribute("Reloading") or tool:GetAttribute("IsReloading") then 
                     state = true 
                 end
                 
+                -- Проверяем UI
                 if not state then
                     local pg = LP:FindFirstChild("PlayerGui")
                     if pg then
@@ -693,17 +697,18 @@ function AUTO_FARM()
                 setLocalTransparency(false)
             end
 
-            -- ЛОГИКА ПЕРЕЗАРЯДКИ (10 студов сверху)
+            -- ⬅️ ЖЕСТКАЯ ФИКСАЦИЯ ПРИ ПЕРЕЗАРЯДКЕ (BodyPosition)
             if CFG.reloadFlyUp and currentlyReloading then
                 flyStateReason = "reloading (Up 10)"
-                local targetPos = orbitCenter + Vector3.new(0, 10, 0)
-                local diff = targetPos - myHRP.Position
-                
-                if diff.Magnitude > 0.05 then
-                    bodyVel.Velocity = diff.Unit * math.min(CFG.flySpeed, diff.Magnitude * 12)
-                else
-                    bodyVel.Velocity = Vector3.zero
+                if bodyVel then bodyVel.Velocity=Vector3.zero end
+                if not bodyPos then
+                    bodyPos = Instance.new("BodyPosition")
+                    bodyPos.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    bodyPos.P = 10000
+                    bodyPos.D = 1000
+                    bodyPos.Parent = myHRP
                 end
+                bodyPos.Position = orbitCenter + Vector3.new(0, 10, 0)
                 
                 local look = aimPart.Position - myHRP.Position
                 if look.Magnitude > 0.05 then myHRP.CFrame = CFrame.new(myHRP.Position, myHRP.Position + look.Unit) end
@@ -1044,48 +1049,68 @@ function AUTO_FARM()
         end
     end)
 
-    -- AUTO-PLAY-AGAIN (СТРОГИЙ ФИКС)
+    -- ⬅️ AUTO-PLAY-AGAIN (ФИКС КЛИКА НИЖЕ)
     local function normalize(s)
         if not s then return "" end
         local res = s:lower():gsub("^%s+",""):gsub("%s+$",""):gsub("%s+"," ")
         return res
     end
     local function findPlayAgain()
-        local res
+        local playAgainBtn = nil
+        local repeatBtn = nil
+        
         local function scan(i,d)
-            if res or d>14 then return end
-            if not i:IsA("GuiObject") or not i.Visible then for _,c in ipairs(i:GetChildren()) do scan(c,d+1) end return end
+            if not i:IsA("GuiObject") or not i.Visible then 
+                for _,c in ipairs(i:GetChildren()) do scan(c,d+1) end 
+                return 
+            end
             if i:IsA("TextButton") or i:IsA("ImageButton") then
                 local texts={}
                 if i:IsA("TextButton") then table.insert(texts, normalize(i.Text)) end
-                for _,d2 in ipairs(i:GetDescendants()) do if d2:IsA("TextLabel") then table.insert(texts, normalize(d2.Text)) end end
-                local isPlayAgain = false
-                local isUnavailable = false
-                for _,t in ipairs(texts) do
-                    -- ⬅️ Ищем ТОЛЬКО "играть снова" или "play again"
-                    if t == "играть снова" or t == "play again" or t == "playagain" then 
-                        isPlayAgain = true 
-                    end
-                    if t:find("недоступно") or t:find("unavailable") then 
-                        isUnavailable = true 
-                    end
+                for _,d2 in ipairs(i:GetDescendants()) do 
+                    if d2:IsA("TextLabel") then table.insert(texts, normalize(d2.Text)) end 
                 end
-                if isPlayAgain and not isUnavailable then res=i; return end
+                
+                local isPA, isRP = false, false
+                for _,t in ipairs(texts) do
+                    if t == "играть снова" or t == "play again" or t == "playagain" then isPA = true end
+                    if t:find("повторная") or t:find("repeat") then isRP = true end
+                end
+                
+                if isPA then playAgainBtn = i end
+                if isRP then repeatBtn = i end
             end
             for _,c in ipairs(i:GetChildren()) do scan(c,d+1) end
         end
-        scan(PlayerGui,0); return res
+        scan(PlayerGui,0)
+        
+        -- Приоритет кнопке "Играть снова"
+        if playAgainBtn then return playAgainBtn, false end
+        -- Если не нашли, берем "Повторная" (и будем кликать ниже)
+        if repeatBtn then return repeatBtn, true end
+        
+        return nil, false
     end
+    
     task.spawn(function()
         while not unloaded do
             if CFG.autoPlayAgain and (os.clock()-lastPlayAgainClick)>PLAY_AGAIN_COOLDOWN then
-                local b=findPlayAgain()
+                local b, isRepeat = findPlayAgain()
                 if b then
                     if VirtualInputManager then
                         local ap,asz=b.AbsolutePosition,b.AbsoluteSize
+                        
+                        local clickX = ap.X + asz.X/2
+                        local clickY = ap.Y + asz.Y/2
+                        
+                        -- ⬅️ Если нашли "Повторную", кликаем на 40 пикселей ниже
+                        if isRepeat then
+                            clickY = clickY + 40
+                        end
+                        
                         pcall(function()
-                            VirtualInputManager:SendMouseButtonEvent(ap.X+asz.X/2, ap.Y+asz.Y/2, 0, true, game, 0); task.wait(0.05)
-                            VirtualInputManager:SendMouseButtonEvent(ap.X+asz.X/2, ap.Y+asz.Y/2, 0, false, game, 0)
+                            VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, true, game, 0); task.wait(0.05)
+                            VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, false, game, 0)
                         end)
                     else
                         pcall(function() b:Activate() end)
@@ -1112,7 +1137,7 @@ function AUTO_FARM()
     end)
 
     -- ═══════════════════════════════════════════════════════
-    -- 🎨 GUI (v5.3)
+    -- 🎨 GUI (v5.4)
     -- ═══════════════════════════════════════════════════════
     local gui=Instance.new("ScreenGui")
     gui.Name="LUMACC_AutoFarm"; gui.ResetOnSpawn=false
@@ -1152,7 +1177,7 @@ function AUTO_FARM()
     local title2=Instance.new("TextLabel")
     title2.Size=UDim2.new(1,-100,0,42); title2.Position=UDim2.new(0,14,0,0)
     title2.BackgroundTransparency=1
-    title2.Text="LUMACC v5.3 (Play Again Fix)"
+    title2.Text="LUMACC v5.4 (Offset & Reload)"
     title2.TextColor3=Color3.new(1,1,1)
     title2.Font=Enum.Font.GothamBold; title2.TextSize=15
     title2.TextXAlignment=Enum.TextXAlignment.Left; title2.Parent=hdr
@@ -1416,7 +1441,7 @@ function AUTO_FARM()
         end
     end)
 
-    print("[LUMACC] AUTO-FARM v5.3 (Play Again Fix) активен.")
+    print("[LUMACC] AUTO-FARM v5.4 (Click Offset & Reload Fix) активен.")
 end
 
 AUTO_FARM()
