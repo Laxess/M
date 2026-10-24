@@ -1,5 +1,8 @@
 -- ═══════════════════════════════════════════════════════════
---  LUMACC AUTO-FARM v4.8 (MOBILE & LOW GRAPHICS)
+--  LUMACC AUTO-FARM v5.0 (CARDBOARD MODE)
+--  + Максимальная оптимизация (все в картон)
+--  + Клик по "Play Again" в центр
+--  + Клик стрельбы +5 пикселей вниз
 -- ═══════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -373,7 +376,7 @@ function AUTO_FARM()
         espHighlight        = true,
         espSkeleton         = true,
         espHead             = true,
-        lowGraphics         = false, -- НОВАЯ ОПЦИЯ
+        cardboardMode       = false,
     }
     local WANTED_WEAPONS={"Assault Rifle","Handgun","Knife","Grenade"}
     local alreadyPicked,lastPickedTime,clickCooldown={},0,0.25
@@ -398,11 +401,12 @@ function AUTO_FARM()
     local currentShielded = false
     local currentShieldType = nil
     local lastShieldRefresh = 0
-    local lowGraphicsConn = nil
+    local cardboardConn = nil
+    local originalProps = {}
 
-    -- ⬅️ ФУНКЦИЯ ОПТИМИЗАЦИИ (Low Graphics)
-    local function setLowGraphics(state)
-        CFG.lowGraphics = state
+    -- ⬅️ ФУНКЦИЯ КАРТОННОГО РЕЖИМА
+    local function setCardboardMode(state)
+        CFG.cardboardMode = state
         if state then
             pcall(function()
                 Lighting.GlobalShadows = false
@@ -416,42 +420,54 @@ function AUTO_FARM()
                 end
             end
 
-            local function clearEffects()
-                for _, obj in ipairs(Workspace:GetDescendants()) do
-                    if obj:IsA("Texture") or obj:IsA("Decal") or obj:IsA("SurfaceAppearance") then
-                        obj.Transparency = 1
-                    elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
-                        obj.Enabled = false
-                    elseif obj:IsA("BillboardGui") or obj:IsA("SurfaceGui") then
-                        obj.Enabled = false
+            local function applyCardboard(obj)
+                if obj:IsA("BasePart") then
+                    if not originalProps[obj] then
+                        originalProps[obj] = {mat = obj.Material, refl = obj.Reflectance}
                     end
-                end
-            end
-            clearEffects()
-            
-            if lowGraphicsConn then lowGraphicsConn:Disconnect() end
-            lowGraphicsConn = Workspace.DescendantAdded:Connect(function(obj)
-                task.wait(0.1)
-                if obj:IsA("Texture") or obj:IsA("Decal") or obj:IsA("SurfaceAppearance") then
+                    obj.Material = Enum.Material.SmoothPlastic
+                    obj.Reflectance = 0
+                elseif obj:IsA("Texture") or obj:IsA("Decal") or obj:IsA("SurfaceAppearance") then
                     obj.Transparency = 1
-                elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
+                elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") or obj:IsA("Beam") or obj:IsA("Trail") then
+                    obj.Enabled = false
+                elseif obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
+                    obj.Enabled = false
+                elseif obj:IsA("BillboardGui") or obj:IsA("SurfaceGui") then
                     obj.Enabled = false
                 end
+            end
+
+            for _, obj in ipairs(Workspace:GetDescendants()) do applyCardboard(obj) end
+            
+            if cardboardConn then cardboardConn:Disconnect() end
+            cardboardConn = Workspace.DescendantAdded:Connect(function(obj)
+                task.wait(0.05)
+                applyCardboard(obj)
             end)
         else
-            if lowGraphicsConn then lowGraphicsConn:Disconnect(); lowGraphicsConn = nil end
+            if cardboardConn then cardboardConn:Disconnect(); cardboardConn = nil end
             pcall(function() Lighting.GlobalShadows = true end)
             for _, child in ipairs(Lighting:GetChildren()) do
                 if child:IsA("Atmosphere") or child:IsA("BloomEffect") or child:IsA("BlurEffect") or child:IsA("ColorCorrectionEffect") or child:IsA("SunRaysEffect") or child:IsA("DepthOfFieldEffect") then
                     child.Enabled = true
                 end
             end
+            for obj, data in pairs(originalProps) do
+                if obj and obj.Parent then
+                    pcall(function()
+                        obj.Material = data.mat
+                        obj.Reflectance = data.refl
+                    end)
+                end
+            end
+            originalProps = {}
             for _, obj in ipairs(Workspace:GetDescendants()) do
                 if obj:IsA("Texture") or obj:IsA("Decal") or obj:IsA("SurfaceAppearance") then
                     obj.Transparency = 0
-                elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
+                elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") or obj:IsA("Beam") or obj:IsA("Trail") then
                     obj.Enabled = true
-                elseif obj:IsA("BillboardGui") or obj:IsA("SurfaceGui") then
+                elseif obj:IsA("PointLight") or obj:IsA("SpotLight") or obj:IsA("SurfaceLight") then
                     obj.Enabled = true
                 end
             end
@@ -512,6 +528,7 @@ function AUTO_FARM()
         return false, nil
     end
 
+    -- ФУНКЦИЯ СТРЕЛЬБЫ (Сдвиг на +5 пикселей вниз)
     local function fireOnce()
         local char = LP.Character
         if char then
@@ -524,8 +541,9 @@ function AUTO_FARM()
         if CFG.useMouseEmu and VirtualInputManager then
             local p = Camera.ViewportSize / 2
             pcall(function()
-                VirtualInputManager:SendMouseButtonEvent(p.X, p.Y, 0, true, game, 0); task.wait(0.01)
-                VirtualInputManager:SendMouseButtonEvent(p.X, p.Y, 0, false, game, 0)
+                -- Отправляем клик чуть ниже центра (p.Y + 5)
+                VirtualInputManager:SendMouseButtonEvent(p.X, p.Y + 5, 0, true, game, 0); task.wait(0.01)
+                VirtualInputManager:SendMouseButtonEvent(p.X, p.Y + 5, 0, false, game, 0)
             end)
         end
     end
@@ -1014,8 +1032,9 @@ function AUTO_FARM()
                     if VirtualInputManager then
                         local ap,asz=b.AbsolutePosition,b.AbsoluteSize
                         pcall(function()
-                            VirtualInputManager:SendMouseButtonEvent(ap.X+asz.X/2,ap.Y+asz.Y-8,0,true,game,0); task.wait(0.05)
-                            VirtualInputManager:SendMouseButtonEvent(ap.X+asz.X/2,ap.Y+asz.Y-8,0,false,game,0)
+                            -- Клик ровно в центр кнопки
+                            VirtualInputManager:SendMouseButtonEvent(ap.X+asz.X/2, ap.Y+asz.Y/2, 0, true, game, 0); task.wait(0.05)
+                            VirtualInputManager:SendMouseButtonEvent(ap.X+asz.X/2, ap.Y+asz.Y/2, 0, false, game, 0)
                         end)
                     else
                         pcall(function() b:Activate() end)
@@ -1042,7 +1061,7 @@ function AUTO_FARM()
     end)
 
     -- ═══════════════════════════════════════════════════════
-    -- 🎨 GUI (v4.8)
+    -- 🎨 GUI (v5.0)
     -- ═══════════════════════════════════════════════════════
     local gui=Instance.new("ScreenGui")
     gui.Name="LUMACC_AutoFarm"; gui.ResetOnSpawn=false
@@ -1082,7 +1101,7 @@ function AUTO_FARM()
     local title2=Instance.new("TextLabel")
     title2.Size=UDim2.new(1,-100,0,42); title2.Position=UDim2.new(0,14,0,0)
     title2.BackgroundTransparency=1
-    title2.Text="LUMACC v4.8 (Mobile)"
+    title2.Text="LUMACC v5.0 (Cardboard)"
     title2.TextColor3=Color3.new(1,1,1)
     title2.Font=Enum.Font.GothamBold; title2.TextSize=15
     title2.TextXAlignment=Enum.TextXAlignment.Left; title2.Parent=hdr
@@ -1177,7 +1196,6 @@ function AUTO_FARM()
     end
     mkTabBtn("Main", 10); mkTabBtn("Combat", 50); mkTabBtn("Visuals", 90); mkTabBtn("Misc", 130)
 
-    -- ⬅️ ОБНОВЛЕННЫЙ MKTOGGLE (теперь поддерживает колбэки)
     local function mkToggle(parent, text, key, callback)
         local c=Instance.new("Frame")
         c.Size=UDim2.new(1,-8,0,36); c.BackgroundColor3=Color3.fromRGB(28,28,38)
@@ -1258,9 +1276,9 @@ function AUTO_FARM()
     mkToggle(pVisuals, "Highlight ESP", "espHighlight")
     mkToggle(pVisuals, "Skeleton ESP", "espSkeleton")
     mkToggle(pVisuals, "Head marker", "espHead")
-    -- ⬅️ НОВАЯ КНОПКА LOW GRAPHICS
-    mkToggle(pVisuals, "Low Graphics (FPS Boost)", "lowGraphics", function(state)
-        setLowGraphics(state)
+    -- ⬅️ НОВАЯ КНОПКА КАРТОННОГО РЕЖИМА
+    mkToggle(pVisuals, "Cardboard Mode (Max FPS)", "cardboardMode", function(state)
+        setCardboardMode(state)
     end)
 
     mkSection(pMisc, "UTILITY")
@@ -1312,7 +1330,6 @@ function AUTO_FARM()
         end
     end)
 
-    -- ПЛАВАЮЩАЯ КНОПКА ДЛЯ МОБИЛОК
     local openBtn = Instance.new("TextButton")
     openBtn.Name = "LUMACC_Toggle"
     openBtn.Size = UDim2.new(0, 50, 0, 50)
@@ -1346,7 +1363,7 @@ function AUTO_FARM()
         end
     end)
 
-    print("[LUMACC] AUTO-FARM v4.8 (Low Graphics) активен.")
+    print("[LUMACC] AUTO-FARM v5.0 (Cardboard) активен.")
 end
 
 AUTO_FARM()
