@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════
---  LUMACC AUTO-FARM v5.9 (Lobby 1v1 Fix)
+--  LUMACC AUTO-FARM v6.0 (Hard 1v1 Click)
 -- ═══════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -354,6 +354,10 @@ function AUTO_FARM()
         reloadFlyUp     = true,
         mineAvoider     = true,
         knifeHover      = true,
+        
+        -- ⬅️ КООРДИНАТЫ ДЛЯ 1V1 (В ПРОЦЕНТАХ)
+        click1v1X       = 0.22, 
+        click1v1Y       = 0.25,
         
         orbitEnabled    = true,
         orbitSpeed      = 900,
@@ -1186,16 +1190,25 @@ function AUTO_FARM()
                     if clicked then task.wait(1.5) end -- Ждем загрузки меню 1v1
                 end
                 
-                -- 3. Ищем "1v1" (Выбор режима)
+                -- 3. ЖЕСТКИЙ КЛИК ПО 1V1 (Без поиска текста)
                 if not clicked then
-                    clicked = clickUIByText({"1v1", "1x1", "1v 1", "1 на 1"})
+                    local vp = Camera.ViewportSize
+                    local targetX = vp.X * CFG.click1v1X
+                    local targetY = vp.Y * CFG.click1v1Y
+                    
+                    pcall(function()
+                        VirtualInputManager:SendMouseButtonEvent(targetX, targetY, 0, true, game, 0); task.wait(0.05)
+                        VirtualInputManager:SendMouseButtonEvent(targetX, targetY, 0, false, game, 0)
+                    end)
+                    
+                    clicked = true
                 end
 
                 if clicked then
                     lastPlayAgainClick = os.clock()
                     roundReady = false
                 else
-                    lastPlayAgainClick = os.clock() -- Чтобы не спамило каждый кадр
+                    lastPlayAgainClick = os.clock()
                 end
             end
             task.wait(0.5)
@@ -1216,7 +1229,7 @@ function AUTO_FARM()
     end)
 
     -- ═══════════════════════════════════════════════════════
-    -- 🎨 GUI (v5.9)
+    -- 🎨 GUI (v6.0)
     -- ═══════════════════════════════════════════════════════
     local gui=Instance.new("ScreenGui")
     gui.Name="LUMACC_AutoFarm"; gui.ResetOnSpawn=false
@@ -1256,7 +1269,7 @@ function AUTO_FARM()
     local title2=Instance.new("TextLabel")
     title2.Size=UDim2.new(1,-100,0,42); title2.Position=UDim2.new(0,14,0,0)
     title2.BackgroundTransparency=1
-    title2.Text="LUMACC v5.9 (Lobby Fix)"
+    title2.Text="LUMACC v6.0 (Hard 1v1)"
     title2.TextColor3=Color3.new(1,1,1)
     title2.Font=Enum.Font.GothamBold; title2.TextSize=15
     title2.TextXAlignment=Enum.TextXAlignment.Left; title2.Parent=hdr
@@ -1451,24 +1464,9 @@ function AUTO_FARM()
     mkToggle(pMisc, "Auto Weapon Pick", "autoPick")
     mkToggle(pMisc, "Auto Play Again", "autoPlayAgain")
 
-    mkSection(pMisc, "LOBBY HELPERS")
-    local force1v1 = Instance.new("TextButton")
-    force1v1.Size=UDim2.new(1,-8,0,34); force1v1.BackgroundColor3=Color3.fromRGB(50,150,50)
-    force1v1.Text="Force Click 1v1"; force1v1.Font=Enum.Font.GothamBold
-    force1v1.TextSize=12; force1v1.TextColor3=Color3.new(1,1,1)
-    force1v1.AutoButtonColor=false; force1v1.BorderSizePixel=0; force1v1.Parent=pMisc
-    Instance.new("UICorner",force1v1).CornerRadius=UDim.new(0,8)
-    force1v1.MouseButton1Click:Connect(function()
-        local success = clickUIByText({"1v1", "1x1", "1v 1", "1 на 1"})
-        if not success then
-            -- Слепой клик по 1v1 (если текст не нашелся)
-            local vp = Camera.ViewportSize
-            pcall(function()
-                VirtualInputManager:SendMouseButtonEvent(vp.X*0.22, vp.Y*0.25, 0, true, game, 0); task.wait(0.05)
-                VirtualInputManager:SendMouseButtonEvent(vp.X*0.22, vp.Y*0.25, 0, false, game, 0)
-            end)
-        end
-    end)
+    mkSection(pMisc, "1V1 CLICK POSITION (Pixels)")
+    mkSlider(pMisc, "1v1 X (%)", 0.0, 1.0, function() return CFG.click1v1X end, function(v) CFG.click1v1X = v end)
+    mkSlider(pMisc, "1v1 Y (%)", 0.0, 1.0, function() return CFG.click1v1Y end, function(v) CFG.click1v1Y = v end)
 
     mkSection(pMisc, "AIM TARGET")
     local aimBtn=Instance.new("TextButton")
@@ -1553,7 +1551,7 @@ function AUTO_FARM()
         end
     end)
 
-    print("[LUMACC] AUTO-FARM v5.9 (Lobby 1v1 Fix) активен.")
+    print("[LUMACC] AUTO-FARM v6.0 (Hard 1v1 Click) активен.")
 end
 
 AUTO_FARM()
