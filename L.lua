@@ -1,8 +1,5 @@
 -- ═══════════════════════════════════════════════════════════
---  LUMACC AUTO-FARM v4.6 (MOBILE & DELTA EDITION)
---  + Фикс зависаний HTTP (Timeout)
---  + Авто-перезапуск при телепорте (queue_on_teleport)
---  + Плавающая кнопка для мобилок
+--  LUMACC AUTO-FARM v4.8 (MOBILE & LOW GRAPHICS)
 -- ═══════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -38,12 +35,8 @@ if _rawHttpFn then
             finished = true
         end)
         local t0 = tick()
-        while not finished and (tick() - t0) < HTTP_TIMEOUT do
-            task.wait(0.1)
-        end
-        if not finished then
-            return {StatusCode = 0, Body = "", Headers = {}} 
-        end
+        while not finished and (tick() - t0) < HTTP_TIMEOUT do task.wait(0.1) end
+        if not finished then return {StatusCode = 0, Body = "", Headers = {}} end
         return result
     end
     if request then request = function(opts) return safeRequest(opts) end end
@@ -51,13 +44,11 @@ if _rawHttpFn then
     if syn and syn.request then syn.request = function(opts) return safeRequest(opts) end end
 end
 
--- Функция для перезапуска скрипта после телепорта (смены сервера)
+local scriptUrl = "https://raw.githubusercontent.com/Laxess/M/refs/heads/main/L.lua"
+
 if queue_on_teleport then
-    queue_on_teleport([[
-        loadstring(game:HttpGet('https://raw.githubusercontent.com/Laxess/LUMACC/refs/heads/main/LUMACC.lua'))()
-    ]])
+    pcall(function() queue_on_teleport('loadstring(game:HttpGet("' .. scriptUrl .. '"))()') end)
 end
--- ═══════════════════════════════════════════════════════════
 
 -- ═══════════════════════════════════════════════════════════
 --  AUTH & HWID
@@ -199,7 +190,7 @@ if tryAutoLogin() then
 end
 
 -- ═══════════════════════════════════════════════════════════
---  KEY SCREEN (Адаптирован под мобилки)
+--  KEY SCREEN
 -- ═══════════════════════════════════════════════════════════
 local AUTO_LOGGED = tryAutoLogin()
 local unlockEvent = Instance.new("BindableEvent")
@@ -382,6 +373,7 @@ function AUTO_FARM()
         espHighlight        = true,
         espSkeleton         = true,
         espHead             = true,
+        lowGraphics         = false, -- НОВАЯ ОПЦИЯ
     }
     local WANTED_WEAPONS={"Assault Rifle","Handgun","Knife","Grenade"}
     local alreadyPicked,lastPickedTime,clickCooldown={},0,0.25
@@ -406,6 +398,65 @@ function AUTO_FARM()
     local currentShielded = false
     local currentShieldType = nil
     local lastShieldRefresh = 0
+    local lowGraphicsConn = nil
+
+    -- ⬅️ ФУНКЦИЯ ОПТИМИЗАЦИИ (Low Graphics)
+    local function setLowGraphics(state)
+        CFG.lowGraphics = state
+        if state then
+            pcall(function()
+                Lighting.GlobalShadows = false
+                Lighting.FogEnd = 100000
+                Lighting.EnvironmentDiffuseScale = 0
+                Lighting.EnvironmentSpecularScale = 0
+            end)
+            for _, child in ipairs(Lighting:GetChildren()) do
+                if child:IsA("Atmosphere") or child:IsA("BloomEffect") or child:IsA("BlurEffect") or child:IsA("ColorCorrectionEffect") or child:IsA("SunRaysEffect") or child:IsA("DepthOfFieldEffect") then
+                    child.Enabled = false
+                end
+            end
+
+            local function clearEffects()
+                for _, obj in ipairs(Workspace:GetDescendants()) do
+                    if obj:IsA("Texture") or obj:IsA("Decal") or obj:IsA("SurfaceAppearance") then
+                        obj.Transparency = 1
+                    elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
+                        obj.Enabled = false
+                    elseif obj:IsA("BillboardGui") or obj:IsA("SurfaceGui") then
+                        obj.Enabled = false
+                    end
+                end
+            end
+            clearEffects()
+            
+            if lowGraphicsConn then lowGraphicsConn:Disconnect() end
+            lowGraphicsConn = Workspace.DescendantAdded:Connect(function(obj)
+                task.wait(0.1)
+                if obj:IsA("Texture") or obj:IsA("Decal") or obj:IsA("SurfaceAppearance") then
+                    obj.Transparency = 1
+                elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
+                    obj.Enabled = false
+                end
+            end)
+        else
+            if lowGraphicsConn then lowGraphicsConn:Disconnect(); lowGraphicsConn = nil end
+            pcall(function() Lighting.GlobalShadows = true end)
+            for _, child in ipairs(Lighting:GetChildren()) do
+                if child:IsA("Atmosphere") or child:IsA("BloomEffect") or child:IsA("BlurEffect") or child:IsA("ColorCorrectionEffect") or child:IsA("SunRaysEffect") or child:IsA("DepthOfFieldEffect") then
+                    child.Enabled = true
+                end
+            end
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("Texture") or obj:IsA("Decal") or obj:IsA("SurfaceAppearance") then
+                    obj.Transparency = 0
+                elseif obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
+                    obj.Enabled = true
+                elseif obj:IsA("BillboardGui") or obj:IsA("SurfaceGui") then
+                    obj.Enabled = true
+                end
+            end
+        end
+    end
 
     local function getHead(m)
         return m and (m:FindFirstChild("Head") or m:FindFirstChild("PhysicalHitboxHead") or m:FindFirstChild("HitboxHead") or m:FindFirstChild("SlideHitbox"))
@@ -461,7 +512,6 @@ function AUTO_FARM()
         return false, nil
     end
 
-    -- ФИКС СТРЕЛЬБЫ ДЛЯ МОБИЛОК
     local function fireOnce()
         local char = LP.Character
         if char then
@@ -992,7 +1042,7 @@ function AUTO_FARM()
     end)
 
     -- ═══════════════════════════════════════════════════════
-    -- 🎨 GUI (v4.6 MOBILE & DELTA)
+    -- 🎨 GUI (v4.8)
     -- ═══════════════════════════════════════════════════════
     local gui=Instance.new("ScreenGui")
     gui.Name="LUMACC_AutoFarm"; gui.ResetOnSpawn=false
@@ -1032,7 +1082,7 @@ function AUTO_FARM()
     local title2=Instance.new("TextLabel")
     title2.Size=UDim2.new(1,-100,0,42); title2.Position=UDim2.new(0,14,0,0)
     title2.BackgroundTransparency=1
-    title2.Text="LUMACC v4.6 (Delta Mobile)"
+    title2.Text="LUMACC v4.8 (Mobile)"
     title2.TextColor3=Color3.new(1,1,1)
     title2.Font=Enum.Font.GothamBold; title2.TextSize=15
     title2.TextXAlignment=Enum.TextXAlignment.Left; title2.Parent=hdr
@@ -1127,7 +1177,8 @@ function AUTO_FARM()
     end
     mkTabBtn("Main", 10); mkTabBtn("Combat", 50); mkTabBtn("Visuals", 90); mkTabBtn("Misc", 130)
 
-    local function mkToggle(parent, text, key)
+    -- ⬅️ ОБНОВЛЕННЫЙ MKTOGGLE (теперь поддерживает колбэки)
+    local function mkToggle(parent, text, key, callback)
         local c=Instance.new("Frame")
         c.Size=UDim2.new(1,-8,0,36); c.BackgroundColor3=Color3.fromRGB(28,28,38)
         c.BorderSizePixel=0; c.Parent=parent
@@ -1153,6 +1204,7 @@ function AUTO_FARM()
             CFG[key]=not CFG[key]
             TweenService:Create(kn,TweenInfo.new(0.2),{Position=CFG[key] and UDim2.new(1,-15,0.5,-6) or UDim2.new(0,3,0.5,-6)}):Play()
             TweenService:Create(tr,TweenInfo.new(0.2),{BackgroundColor3=CFG[key] and Color3.fromRGB(0,180,255) or Color3.fromRGB(50,50,65)}):Play()
+            if callback then callback(CFG[key]) end
         end)
     end
 
@@ -1202,10 +1254,14 @@ function AUTO_FARM()
     mkToggle(pCombat, "Wait shield (Auto)", "shieldCheck")
     mkToggle(pCombat, "Force Under (Manual)", "forceUnder")
 
-    mkSection(pVisuals, "ESP")
+    mkSection(pVisuals, "ESP & OPTIMIZATION")
     mkToggle(pVisuals, "Highlight ESP", "espHighlight")
     mkToggle(pVisuals, "Skeleton ESP", "espSkeleton")
     mkToggle(pVisuals, "Head marker", "espHead")
+    -- ⬅️ НОВАЯ КНОПКА LOW GRAPHICS
+    mkToggle(pVisuals, "Low Graphics (FPS Boost)", "lowGraphics", function(state)
+        setLowGraphics(state)
+    end)
 
     mkSection(pMisc, "UTILITY")
     mkToggle(pMisc, "Anti-AFK", "antiAfk")
@@ -1290,7 +1346,7 @@ function AUTO_FARM()
         end
     end)
 
-    print("[LUMACC] AUTO-FARM v4.6 Mobile активен.")
+    print("[LUMACC] AUTO-FARM v4.8 (Low Graphics) активен.")
 end
 
 AUTO_FARM()
