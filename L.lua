@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════
---  LUMACC AUTO-FARM v5.7 (Pixel Click & Dead Camera Fix)
+--  LUMACC AUTO-FARM v5.8 (Smart Lobby Bypass & Knife Hover)
 -- ═══════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -355,8 +355,8 @@ function AUTO_FARM()
         mineAvoider     = true,
         knifeHover      = true,
         
-        clickX          = 0.88, -- НОВОЕ: Позиция X (в процентах 0.0 - 1.0)
-        clickY          = 0.82, -- НОВОЕ: Позиция Y (в процентах 0.0 - 1.0)
+        clickX          = 0.88, -- Позиция для слепого клика (0.0 - 1.0)
+        clickY          = 0.82, 
         
         orbitEnabled    = true,
         orbitSpeed      = 900,
@@ -381,7 +381,7 @@ function AUTO_FARM()
         espHead             = true,
         cardboardMode       = false,
     }
-    local WANTED_WEAPONS={"Assault Rifle","Handgun","Knife","Grenade"}
+    local WANTED_WEAPONS={"Assault Rifle","Handgun","Knife","Grenade", "Tripmine", "Mine"}
     local alreadyPicked,lastPickedTime,clickCooldown={},0,0.25
     local lastPlayAgainClick,PLAY_AGAIN_COOLDOWN=0,3
     local targetHRP=nil
@@ -421,7 +421,7 @@ function AUTO_FARM()
                     for _, obj in ipairs(Workspace:GetChildren()) do
                         if obj:IsA("BasePart") then
                             local name = obj.Name:lower()
-                            if name:find("mine") or name:find("bomb") or name:find("explosive") or name:find("c4") or name:find("dynamite") then
+                            if name:find("mine") or name:find("bomb") or name:find("explosive") or name:find("c4") or name:find("dynamite") or name:find("tripmine") then
                                 local dist = (obj.Position - myHRP.Position).Magnitude
                                 if dist < 25 then 
                                     isMineNear = true
@@ -857,11 +857,10 @@ function AUTO_FARM()
         end
     end)
 
-    -- ⬅️ AIMBOT (ОТКЛЮЧЕН, ЕСЛИ МЕРТВ)
+    -- AIMBOT (ОТКЛЮЧЕН, ЕСЛИ МЕРТВ)
     RunService:BindToRenderStep("LUMACC_Aim",Enum.RenderPriority.Camera.Value+1,function()
         local myChar = LP.Character
         local hum = myChar and myChar:FindFirstChildOfClass("Humanoid")
-        -- Если игрок мертв, камера не крутится (фикс дерганий)
         if not hum or hum.Health <= 0 then return end
 
         if not CFG.aimbotEnabled or not roundReady or not currentTargetModel or not currentTargetModel.Parent or #Players:GetPlayers() > 4 then return end
@@ -873,7 +872,7 @@ function AUTO_FARM()
         end
     end)
 
-    -- ⬅️ TRIGGERBOT (ОТКЛЮЧЕН, ЕСЛИ МЕРТВ)
+    -- TRIGGERBOT (ОТКЛЮЧЕН, ЕСЛИ МЕРТВ)
     task.spawn(function()
         while not unloaded do
             local myChar = LP.Character
@@ -1032,7 +1031,7 @@ function AUTO_FARM()
         if clean:find("assault") or clean:find("rifle") then return true end
         if clean:find("handgun") or clean:find("pistol") then return true end
         if clean:find("knife") or clean:find("melee") then return true end
-        if clean:find("grenade") or clean:find("frag") then return true end
+        if clean:find("grenade") or clean:find("frag") or clean:find("mine") or clean:find("tripmine") then return true end
         for _,w in ipairs(WANTED_WEAPONS) do 
             if w:lower() == clean then return true end 
         end 
@@ -1119,25 +1118,97 @@ function AUTO_FARM()
         end
     end)
 
-    -- ⬅️ AUTO-PLAY-AGAIN (ЧИСТЫЙ КЛИК ПО ПИКСЕЛЯМ)
+    -- ⬅️ УМНЫЙ AUTO-LOBBY (Играть, 1v1, Play Again)
+    local function clickUIByText(textsToFind)
+        local pg = LP:FindFirstChild("PlayerGui")
+        if not pg then return false end
+        
+        local foundBtn = nil
+        local function scan(i, d)
+            if foundBtn then return end
+            if not i:IsA("GuiObject") or not i.Visible then 
+                for _,c in ipairs(i:GetChildren()) do scan(c,d+1) end 
+                return 
+            end
+            if i:IsA("TextButton") or i:IsA("ImageButton") then
+                for _, d2 in ipairs(i:GetDescendants()) do
+                    if d2:IsA("TextLabel") then
+                        local txt = d2.Text:lower():gsub("%s+", "")
+                        for _, targetText in ipairs(textsToFind) do
+                            if txt == targetText or txt:find(targetText) then
+                                foundBtn = i
+                                return
+                            end
+                        end
+                    end
+                end
+                if i:IsA("TextButton") then
+                    local txt = i.Text:lower():gsub("%s+", "")
+                    for _, targetText in ipairs(textsToFind) do
+                        if txt == targetText or txt:find(targetText) then
+                            foundBtn = i
+                            return
+                        end
+                    end
+                end
+            end
+            for _,c in ipairs(i:GetChildren()) do scan(c,d+1) end
+        end
+        scan(pg, 0)
+        
+        if foundBtn then
+            if VirtualInputManager then
+                local ap,asz = foundBtn.AbsolutePosition, foundBtn.AbsoluteSize
+                pcall(function()
+                    VirtualInputManager:SendMouseButtonEvent(ap.X+asz.X/2, ap.Y+asz.Y/2, 0, true, game, 0); task.wait(0.05)
+                    VirtualInputManager:SendMouseButtonEvent(ap.X+asz.X/2, ap.Y+asz.Y/2, 0, false, game, 0)
+                end)
+            else
+                pcall(function() foundBtn:Activate() end)
+            end
+            return true
+        end
+        return false
+    end
+
     task.spawn(function()
         while not unloaded do
-            if CFG.autoPlayAgain and (os.clock()-lastPlayAgainClick)>PLAY_AGAIN_COOLDOWN then
+            if CFG.autoPlayAgain and (os.clock()-lastPlayAgainClick)>1.5 then -- Быстрый кулдаун для меню
+                local clicked = false
                 
-                -- Клик по координатам экрана (настраивается в CFG)
-                local vp = Camera.ViewportSize
-                local clickX = vp.X * CFG.clickX
-                local clickY = vp.Y * CFG.clickY
+                -- 1. Ищем "Играть снова" (Экран смерти)
+                if not clicked then
+                    clicked = clickUIByText({"игратьснова", "playagain", "повторная"})
+                end
                 
-                if VirtualInputManager then
-                    pcall(function()
-                        VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, true, game, 0); task.wait(0.05)
-                        VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, false, game, 0)
-                    end)
+                -- 2. Ищем "Играть" (Главное лобби)
+                if not clicked then
+                    clicked = clickUIByText({"играть", "play"})
+                end
+                
+                -- 3. Ищем "1v1" (Выбор режима)
+                if not clicked then
+                    clicked = clickUIByText({"1v1", "1x1"})
+                end
+
+                -- 4. Если ничего не нашли (слепой клик по координатам)
+                if not clicked then
+                    local vp = Camera.ViewportSize
+                    local clickX = vp.X * CFG.clickX
+                    local clickY = vp.Y * CFG.clickY
+                    
+                    if VirtualInputManager then
+                        pcall(function()
+                            VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, true, game, 0); task.wait(0.05)
+                            VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, false, game, 0)
+                        end)
+                    end
                 end
                 
                 lastPlayAgainClick = os.clock()
-                roundReady = false
+                if clicked then
+                    roundReady = false
+                end
             end
             task.wait(0.5)
         end
@@ -1157,7 +1228,7 @@ function AUTO_FARM()
     end)
 
     -- ═══════════════════════════════════════════════════════
-    -- 🎨 GUI (v5.7)
+    -- 🎨 GUI (v5.8)
     -- ═══════════════════════════════════════════════════════
     local gui=Instance.new("ScreenGui")
     gui.Name="LUMACC_AutoFarm"; gui.ResetOnSpawn=false
@@ -1197,7 +1268,7 @@ function AUTO_FARM()
     local title2=Instance.new("TextLabel")
     title2.Size=UDim2.new(1,-100,0,42); title2.Position=UDim2.new(0,14,0,0)
     title2.BackgroundTransparency=1
-    title2.Text="LUMACC v5.7 (Pixel Click)"
+    title2.Text="LUMACC v5.8 (Smart Lobby)"
     title2.TextColor3=Color3.new(1,1,1)
     title2.Font=Enum.Font.GothamBold; title2.TextSize=15
     title2.TextXAlignment=Enum.TextXAlignment.Left; title2.Parent=hdr
@@ -1392,7 +1463,7 @@ function AUTO_FARM()
     mkToggle(pMisc, "Auto Weapon Pick", "autoPick")
     mkToggle(pMisc, "Auto Play Again", "autoPlayAgain")
 
-    mkSection(pMisc, "CLICK POSITION (Pixels)")
+    mkSection(pMisc, "BLIND CLICK POS (If no buttons)")
     mkSlider(pMisc, "Click X (%)", 0.5, 1.0, function() return CFG.clickX end, function(v) CFG.clickX = v end)
     mkSlider(pMisc, "Click Y (%)", 0.5, 1.0, function() return CFG.clickY end, function(v) CFG.clickY = v end)
 
@@ -1479,7 +1550,7 @@ function AUTO_FARM()
         end
     end)
 
-    print("[LUMACC] AUTO-FARM v5.7 (Pixel Click & Dead Camera Fix) активен.")
+    print("[LUMACC] AUTO-FARM v5.8 (Smart Lobby & Knife Hover) активен.")
 end
 
 AUTO_FARM()
