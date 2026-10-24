@@ -1,8 +1,7 @@
 -- ═══════════════════════════════════════════════════════════
---  LUMACC AUTO-FARM v5.0 (CARDBOARD MODE)
---  + Максимальная оптимизация (все в картон)
---  + Клик по "Play Again" в центр
---  + Клик стрельбы +5 пикселей вниз
+--  LUMACC AUTO-FARM v5.1 (AutoPlayAgain FIX)
+--  + Исправлен поиск кнопки "Повторная"
+--  + Клик ровно в центр кнопки
 -- ═══════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -528,7 +527,6 @@ function AUTO_FARM()
         return false, nil
     end
 
-    -- ФУНКЦИЯ СТРЕЛЬБЫ (Сдвиг на +5 пикселей вниз)
     local function fireOnce()
         local char = LP.Character
         if char then
@@ -541,7 +539,6 @@ function AUTO_FARM()
         if CFG.useMouseEmu and VirtualInputManager then
             local p = Camera.ViewportSize / 2
             pcall(function()
-                -- Отправляем клик чуть ниже центра (p.Y + 5)
                 VirtualInputManager:SendMouseButtonEvent(p.X, p.Y + 5, 0, true, game, 0); task.wait(0.01)
                 VirtualInputManager:SendMouseButtonEvent(p.X, p.Y + 5, 0, false, game, 0)
             end)
@@ -997,7 +994,7 @@ function AUTO_FARM()
         end
     end)
 
-    -- AUTO-PLAY-AGAIN
+    -- AUTO-PLAY-AGAIN (⬅️ ИСПРАВЛЕНО)
     local function normalize(s)
         if not s then return "" end
         local res = s:lower():gsub("^%s+",""):gsub("%s+$",""):gsub("%s+"," ")
@@ -1012,13 +1009,18 @@ function AUTO_FARM()
                 local texts={}
                 if i:IsA("TextButton") then table.insert(texts, normalize(i.Text)) end
                 for _,d2 in ipairs(i:GetDescendants()) do if d2:IsA("TextLabel") then table.insert(texts, normalize(d2.Text)) end end
-                local pa,un,rp=false,false,false
+                local pa, un = false, false
                 for _,t in ipairs(texts) do
-                    if t=="играть снова" or t=="play again" or t=="playagain" then pa=true end
-                    if t:find("недоступно") or t:find("unavailable") then un=true end
-                    if t:find("повторная") or t:find("repeat") then rp=true end
+                    -- Теперь ищем "повторная" и "играть снова"
+                    if t == "играть снова" or t == "play again" or t == "playagain" or t:find("повторная") then 
+                        pa = true 
+                    end
+                    if t:find("недоступно") or t:find("unavailable") then 
+                        un = true 
+                    end
                 end
-                if pa and not un and not rp then res=i; return end
+                -- Убрано условие not rp (repeat), чтобы кнопка находилась
+                if pa and not un then res=i; return end
             end
             for _,c in ipairs(i:GetChildren()) do scan(c,d+1) end
         end
@@ -1061,7 +1063,7 @@ function AUTO_FARM()
     end)
 
     -- ═══════════════════════════════════════════════════════
-    -- 🎨 GUI (v5.0)
+    -- 🎨 GUI (v5.1)
     -- ═══════════════════════════════════════════════════════
     local gui=Instance.new("ScreenGui")
     gui.Name="LUMACC_AutoFarm"; gui.ResetOnSpawn=false
@@ -1101,7 +1103,7 @@ function AUTO_FARM()
     local title2=Instance.new("TextLabel")
     title2.Size=UDim2.new(1,-100,0,42); title2.Position=UDim2.new(0,14,0,0)
     title2.BackgroundTransparency=1
-    title2.Text="LUMACC v5.0 (Cardboard)"
+    title2.Text="LUMACC v5.1 (AutoPlayAgain Fix)"
     title2.TextColor3=Color3.new(1,1,1)
     title2.Font=Enum.Font.GothamBold; title2.TextSize=15
     title2.TextXAlignment=Enum.TextXAlignment.Left; title2.Parent=hdr
@@ -1276,7 +1278,6 @@ function AUTO_FARM()
     mkToggle(pVisuals, "Highlight ESP", "espHighlight")
     mkToggle(pVisuals, "Skeleton ESP", "espSkeleton")
     mkToggle(pVisuals, "Head marker", "espHead")
-    -- ⬅️ НОВАЯ КНОПКА КАРТОННОГО РЕЖИМА
     mkToggle(pVisuals, "Cardboard Mode (Max FPS)", "cardboardMode", function(state)
         setCardboardMode(state)
     end)
@@ -1363,7 +1364,7 @@ function AUTO_FARM()
         end
     end)
 
-    print("[LUMACC] AUTO-FARM v5.0 (Cardboard) активен.")
+    print("[LUMACC] AUTO-FARM v5.1 активен.")
 end
 
 AUTO_FARM()
