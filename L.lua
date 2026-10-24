@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════
---  LUMACC AUTO-FARM v5.4 (Click Offset & Reload Fix)
+--  LUMACC AUTO-FARM v5.6 (Knife Hover & Blind Click)
 -- ═══════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -352,6 +352,8 @@ function AUTO_FARM()
         shieldDepth     = 2,
         flySpeed        = 240,
         reloadFlyUp     = true,
+        mineAvoider     = true,
+        knifeHover      = true, -- НОВАЯ ОПЦИЯ
         
         orbitEnabled    = true,
         orbitSpeed      = 900,
@@ -402,42 +404,62 @@ function AUTO_FARM()
     local cardboardConn = nil
     local originalProps = {}
     local currentlyReloading = false
+    local currentlyDodgingMine = false
+    local enemyHasKnife = false -- НОВАЯ ПЕРЕМЕННАЯ
 
-    -- ⬅️ ПРОВЕРКА ПЕРЕЗАРЯДКИ (Ammo + UI)
+    -- ⬅️ ФУНКЦИЯ ПОИСКА МИН
     task.spawn(function()
         while not unloaded do
-            local state = false
-            local char = LP.Character
-            local tool = char and char:FindFirstChildOfClass("Tool")
-            
-            if tool then
-                -- Проверяем атрибуты патронов
-                local ammo = tool:GetAttribute("Ammo") or tool:GetAttribute("Clip") or tool:GetAttribute("CurrentAmmo")
-                if ammo == 0 then state = true end
-                
-                -- Проверяем атрибуты перезарядки
-                if tool:GetAttribute("Reloading") or tool:GetAttribute("IsReloading") then 
-                    state = true 
-                end
-                
-                -- Проверяем UI
-                if not state then
-                    local pg = LP:FindFirstChild("PlayerGui")
-                    if pg then
-                        for _, gui in ipairs(pg:GetDescendants()) do
-                            if gui:IsA("TextLabel") and gui.Visible then
-                                local txt = gui.Text:lower()
-                                if txt:find("reload") or txt:find("перезаряд") then
-                                    state = true
+            if CFG.mineAvoider then
+                local myChar = LP.Character
+                local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if myHRP then
+                    local isMineNear = false
+                    for _, obj in ipairs(Workspace:GetChildren()) do
+                        if obj:IsA("BasePart") then
+                            local name = obj.Name:lower()
+                            if name:find("mine") or name:find("bomb") or name:find("explosive") or name:find("c4") or name:find("dynamite") then
+                                local dist = (obj.Position - myHRP.Position).Magnitude
+                                if dist < 25 then 
+                                    isMineNear = true
                                     break
                                 end
                             end
                         end
                     end
+                    currentlyDodgingMine = isMineNear
+                else
+                    currentlyDodgingMine = false
                 end
+            else
+                currentlyDodgingMine = false
             end
-            currentlyReloading = state
-            task.wait(0.15)
+            task.wait(0.1)
+        end
+    end)
+
+    -- ⬅️ ФУНКЦИЯ ПРОВЕРКИ НОЖА У ВРАГА
+    task.spawn(function()
+        while not unloaded do
+            if currentTargetModel then
+                local hasKnife = false
+                local tool = currentTargetModel:FindFirstChildOfClass("Tool")
+                if tool and (tool.Name:lower():find("knife") or tool.Name:lower():find("melee")) then
+                    hasKnife = true
+                else
+                    -- Иногда нож не в Tool, а в ViewModel или папке
+                    for _, v in ipairs(currentTargetModel:GetDescendants()) do
+                        if v.Name:lower():find("knife") and (v:IsA("Tool") or v:IsA("Model")) then
+                            hasKnife = true
+                            break
+                        end
+                    end
+                end
+                enemyHasKnife = hasKnife
+            else
+                enemyHasKnife = false
+            end
+            task.wait(0.2)
         end
     end)
 
@@ -678,7 +700,43 @@ function AUTO_FARM()
                 currentShielded, currentShieldType = hasShield(tgt)
                 lastShieldRefresh = os.clock()
             end
-            
+
+            -- ⬅️ ЛОГИКА ПРИ НОЖЕ (Зависаем на 5 студов сверху)
+            if CFG.knifeHover and enemyHasKnife then
+                flyStateReason = "knife (Up 5)"
+                if bodyVel then bodyVel.Velocity=Vector3.zero end
+                if not bodyPos then
+                    bodyPos = Instance.new("BodyPosition")
+                    bodyPos.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    bodyPos.P = 10000
+                    bodyPos.D = 1000
+                    bodyPos.Parent = myHRP
+                end
+                bodyPos.Position = orbitCenter + Vector3.new(0, 5, 0)
+                
+                local look = aimPart.Position - myHRP.Position
+                if look.Magnitude > 0.05 then myHRP.CFrame = CFrame.new(myHRP.Position, myHRP.Position + look.Unit) end
+                return
+            end
+
+            -- ⬅️ ЛОГИКА УХОДА ОТ МИНЫ (50 студов вверх)
+            if CFG.mineAvoider and currentlyDodgingMine then
+                flyStateReason = "dodging mine (Up 50)"
+                if bodyVel then bodyVel.Velocity=Vector3.zero end
+                if not bodyPos then
+                    bodyPos = Instance.new("BodyPosition")
+                    bodyPos.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    bodyPos.P = 10000
+                    bodyPos.D = 1000
+                    bodyPos.Parent = myHRP
+                end
+                bodyPos.Position = Vector3.new(myHRP.Position.X, myHRP.Position.Y + 50, myHRP.Position.Z)
+                
+                local look = aimPart.Position - myHRP.Position
+                if look.Magnitude > 0.05 then myHRP.CFrame = CFrame.new(myHRP.Position, myHRP.Position + look.Unit) end
+                return
+            end
+
             if CFG.forceUnder or (CFG.shieldCheck and currentShielded) then
                 if bodyVel then bodyVel.Velocity=Vector3.zero end
                 if not bodyPos then
@@ -697,7 +755,7 @@ function AUTO_FARM()
                 setLocalTransparency(false)
             end
 
-            -- ⬅️ ЖЕСТКАЯ ФИКСАЦИЯ ПРИ ПЕРЕЗАРЯДКЕ (BodyPosition)
+            -- ЛОГИКА ПЕРЕЗАРЯДКИ (10 студов сверху)
             if CFG.reloadFlyUp and currentlyReloading then
                 flyStateReason = "reloading (Up 10)"
                 if bodyVel then bodyVel.Velocity=Vector3.zero end
@@ -811,7 +869,7 @@ function AUTO_FARM()
     -- TRIGGERBOT
     task.spawn(function()
         while not unloaded do
-            if CFG.triggerbotEnabled and roundReady and currentTargetModel and currentTargetModel.Parent and #Players:GetPlayers() <= 4 then
+            if CFG.triggerbotEnabled and roundReady and currentTargetModel and currentTargetModel.Parent and #Players:GetPlayers() <= 4 and not currentlyDodgingMine then
                 local shielded = false
                 if CFG.shieldCheck then
                     shielded, currentShieldType = hasShield(currentTargetModel)
@@ -1049,71 +1107,45 @@ function AUTO_FARM()
         end
     end)
 
-    -- ⬅️ AUTO-PLAY-AGAIN (ФИКС КЛИКА НИЖЕ)
-    local function normalize(s)
-        if not s then return "" end
-        local res = s:lower():gsub("^%s+",""):gsub("%s+$",""):gsub("%s+"," ")
-        return res
-    end
-    local function findPlayAgain()
-        local playAgainBtn = nil
-        local repeatBtn = nil
-        
+    -- ⬅️ AUTO-PLAY-AGAIN (СЛЕПОЙ КЛИК НИЖЕ)
+    local function findAnyButton()
+        local res
         local function scan(i,d)
+            if res then return end
             if not i:IsA("GuiObject") or not i.Visible then 
                 for _,c in ipairs(i:GetChildren()) do scan(c,d+1) end 
                 return 
             end
-            if i:IsA("TextButton") or i:IsA("ImageButton") then
-                local texts={}
-                if i:IsA("TextButton") then table.insert(texts, normalize(i.Text)) end
-                for _,d2 in ipairs(i:GetDescendants()) do 
-                    if d2:IsA("TextLabel") then table.insert(texts, normalize(d2.Text)) end 
+            -- Просто ищем первую попавшуюся кнопку в меню
+            if i:IsA("TextButton") and i.Text ~= "" then
+                -- Игнорируем мелкие кнопки (типа крестиков)
+                if i.AbsoluteSize.Y > 20 then
+                    res = i
+                    return
                 end
-                
-                local isPA, isRP = false, false
-                for _,t in ipairs(texts) do
-                    if t == "играть снова" or t == "play again" or t == "playagain" then isPA = true end
-                    if t:find("повторная") or t:find("repeat") then isRP = true end
-                end
-                
-                if isPA then playAgainBtn = i end
-                if isRP then repeatBtn = i end
             end
             for _,c in ipairs(i:GetChildren()) do scan(c,d+1) end
         end
         scan(PlayerGui,0)
-        
-        -- Приоритет кнопке "Играть снова"
-        if playAgainBtn then return playAgainBtn, false end
-        -- Если не нашли, берем "Повторная" (и будем кликать ниже)
-        if repeatBtn then return repeatBtn, true end
-        
-        return nil, false
+        return res
     end
     
     task.spawn(function()
         while not unloaded do
             if CFG.autoPlayAgain and (os.clock()-lastPlayAgainClick)>PLAY_AGAIN_COOLDOWN then
-                local b, isRepeat = findPlayAgain()
+                local b = findAnyButton()
                 if b then
                     if VirtualInputManager then
                         local ap,asz=b.AbsolutePosition,b.AbsoluteSize
                         
                         local clickX = ap.X + asz.X/2
-                        local clickY = ap.Y + asz.Y/2
-                        
-                        -- ⬅️ Если нашли "Повторную", кликаем на 40 пикселей ниже
-                        if isRepeat then
-                            clickY = clickY + 40
-                        end
+                        -- ⬅️ БЕЗУСЛОВНЫЙ КЛИК НИЖЕ
+                        local clickY = ap.Y + asz.Y + 50 
                         
                         pcall(function()
                             VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, true, game, 0); task.wait(0.05)
                             VirtualInputManager:SendMouseButtonEvent(clickX, clickY, 0, false, game, 0)
                         end)
-                    else
-                        pcall(function() b:Activate() end)
                     end
                     lastPlayAgainClick=os.clock()
                     roundReady = false
@@ -1137,7 +1169,7 @@ function AUTO_FARM()
     end)
 
     -- ═══════════════════════════════════════════════════════
-    -- 🎨 GUI (v5.4)
+    -- 🎨 GUI (v5.6)
     -- ═══════════════════════════════════════════════════════
     local gui=Instance.new("ScreenGui")
     gui.Name="LUMACC_AutoFarm"; gui.ResetOnSpawn=false
@@ -1177,7 +1209,7 @@ function AUTO_FARM()
     local title2=Instance.new("TextLabel")
     title2.Size=UDim2.new(1,-100,0,42); title2.Position=UDim2.new(0,14,0,0)
     title2.BackgroundTransparency=1
-    title2.Text="LUMACC v5.4 (Offset & Reload)"
+    title2.Text="LUMACC v5.6 (Knife Hover)"
     title2.TextColor3=Color3.new(1,1,1)
     title2.Font=Enum.Font.GothamBold; title2.TextSize=15
     title2.TextXAlignment=Enum.TextXAlignment.Left; title2.Parent=hdr
@@ -1337,6 +1369,8 @@ function AUTO_FARM()
     mkToggle(pMain, "Fly", "flyEnabled")
     mkToggle(pMain, "Noclip", "noclipEnabled")
     mkToggle(pMain, "Fly Up on Reload (10s)", "reloadFlyUp")
+    mkToggle(pMain, "Mine Avoider (Fly Up 50s)", "mineAvoider")
+    mkToggle(pMain, "Knife Hover (Up 5s)", "knifeHover") -- НОВАЯ КНОПКА
 
     mkSection(pCombat, "AIM & FIRE")
     mkToggle(pCombat, "Aimbot (head)", "aimbotEnabled")
@@ -1399,6 +1433,10 @@ function AUTO_FARM()
                 statusPrefix = "FLY: OFF (No Enemies)"
             elseif flyStateReason:find("reloading") then
                 statusPrefix = "FLY: RELOADING (UP 10)"
+            elseif flyStateReason:find("dodging") then
+                statusPrefix = "FLY: DODGING MINE (UP 50)"
+            elseif flyStateReason:find("knife") then
+                statusPrefix = "FLY: KNIFE HOVER (UP 5)" -- НОВЫЙ СТАТУС
             end
             
             stat.Text=string.format("%s | TARGET: %s",
@@ -1441,7 +1479,7 @@ function AUTO_FARM()
         end
     end)
 
-    print("[LUMACC] AUTO-FARM v5.4 (Click Offset & Reload Fix) активен.")
+    print("[LUMACC] AUTO-FARM v5.6 (Knife Hover & Blind Click) активен.")
 end
 
 AUTO_FARM()
